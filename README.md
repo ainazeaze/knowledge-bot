@@ -90,8 +90,9 @@ useful for browsing what you've saved.
 - Add PDF ingestion (use `PyMuPDF` or `pdfplumber`)
 - Add scheduled ingestion from RSS feeds
 - Add per-user knowledge bases (use Discord user ID as collection namespace)
-- Swap Claude for a local LLM (Ollama + Mistral/Llama)
 - Add a web UI with Gradio alongside the Discord bot
 
 ## LLM Usage
 This project was made in collaboration with Claude Code, testing how fast we can build actually useful things now with AI.
+## Done
+- Swap Claude for a local LLM (Ollama + Mistral/Llama)
