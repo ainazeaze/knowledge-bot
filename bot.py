@@ -4,12 +4,14 @@ A personal second brain that lives in your Discord server.
 Save articles, notes, and URLs, then query them in natural language.
 """
 
+import asyncio
 import logging
+
 import discord
 from discord import app_commands
 
 import config
-from ingestion import KnowledgeStore, Document
+from ingestion import Document, KnowledgeStore
 from retriever import Retriever
 from web_scraper import scrape_url
 
@@ -47,7 +49,10 @@ async def on_ready():
 
 # ── /save ────────────────────────────────────────────────────────────
 
-@tree.command(name="save", description="Save a URL or text snippet to your knowledge base")
+
+@tree.command(
+    name="save", description="Save a URL or text snippet to your knowledge base"
+)
 @app_commands.describe(content="A URL to scrape, or raw text to save directly")
 async def save_command(interaction: discord.Interaction, content: str):
     await interaction.response.defer(thinking=True)
@@ -80,7 +85,7 @@ async def save_command(interaction: discord.Interaction, content: str):
                 added_by=str(interaction.user.id),
             )
 
-        num_chunks = store.ingest(doc)
+        num_chunks = await asyncio.to_thread(store.ingest, doc)
 
         embed = discord.Embed(
             title="Saved to knowledge base",
@@ -101,13 +106,16 @@ async def save_command(interaction: discord.Interaction, content: str):
 
 # ── /ask ─────────────────────────────────────────────────────────────
 
-@tree.command(name="ask", description="Ask a question — get an answer from your knowledge base")
+
+@tree.command(
+    name="ask", description="Ask a question — get an answer from your knowledge base"
+)
 @app_commands.describe(question="Your question in natural language")
 async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.response.defer(thinking=True)
 
     try:
-        result = retriever.ask(question)
+        result = await asyncio.to_thread(retriever.ask, question)
 
         embed = discord.Embed(
             title=question[:256],
@@ -134,7 +142,7 @@ async def ask_command(interaction: discord.Interaction, question: str):
                     inline=False,
                 )
 
-        method = "RAG + Claude" if result["used_llm"] else "Vector search"
+        method = "RAG + LLM" if result["used_llm"] else "Vector search"
         embed.set_footer(text=f"Method: {method}")
 
         await interaction.followup.send(embed=embed)
@@ -147,13 +155,14 @@ async def ask_command(interaction: discord.Interaction, question: str):
 
 # ── /search ──────────────────────────────────────────────────────────
 
+
 @tree.command(name="search", description="Search your knowledge base by keywords")
 @app_commands.describe(query="Keywords or phrase to search for")
 async def search_command(interaction: discord.Interaction, query: str):
     await interaction.response.defer(thinking=True)
 
     try:
-        results = retriever.search(query, top_k=5)
+        results = await asyncio.to_thread(retriever.search, query, 5)
 
         if not results:
             await interaction.followup.send("No results found. Try different keywords.")
@@ -189,6 +198,7 @@ async def search_command(interaction: discord.Interaction, query: str):
 
 
 # ── /list ────────────────────────────────────────────────────────────
+
 
 @tree.command(name="list", description="Show recently saved documents")
 async def list_command(interaction: discord.Interaction):
@@ -226,6 +236,7 @@ async def list_command(interaction: discord.Interaction):
 
 # ── /delete ──────────────────────────────────────────────────────────
 
+
 @tree.command(name="delete", description="Delete a document from the knowledge base")
 @app_commands.describe(doc_id="Document ID (from /list)")
 async def delete_command(interaction: discord.Interaction, doc_id: str):
@@ -251,6 +262,7 @@ async def delete_command(interaction: discord.Interaction, doc_id: str):
 
 # ── /stats ───────────────────────────────────────────────────────────
 
+
 @tree.command(name="stats", description="Show knowledge base statistics")
 async def stats_command(interaction: discord.Interaction):
     docs = store.list_documents(limit=999)
@@ -260,7 +272,9 @@ async def stats_command(interaction: discord.Interaction):
     embed.add_field(name="Documents", value=str(len(docs)), inline=True)
     embed.add_field(
         name="LLM",
-        value=retriever.provider_name if retriever.llm_available else "Disabled (search only)",
+        value=retriever.provider_name
+        if retriever.llm_available
+        else "Disabled (search only)",
         inline=True,
     )
     embed.add_field(
