@@ -59,14 +59,24 @@ class KnowledgeStore:
 
         return chunks
 
-    def ingest(self, doc: Document) -> int:
-        """Chunk, embed, and store a document. Returns number of chunks created."""
+    def ingest(self, doc: Document) -> tuple[int, bool]:
+        """Chunk, embed, and store a document.
+
+        Returns (num_chunks, is_duplicate). If duplicate, no work is done.
+        """
+        doc_id = hashlib.md5(doc.text.encode()).hexdigest()[:16]
+
+        existing = self.collection.get(where={"doc_id": doc_id}, limit=1, include=[])
+        if existing["ids"]:
+            existing_count = self.collection.get(
+                where={"doc_id": doc_id}, include=[]
+            )
+            return len(existing_count["ids"]), True
+
         chunks = self.chunk_text(doc.text)
         if not chunks:
-            return 0
+            return 0, False
 
-        # Generate a stable document ID from content hash
-        doc_id = hashlib.md5(doc.text[:500].encode()).hexdigest()[:12]
         now = datetime.now(timezone.utc).isoformat()
 
         ids = []
@@ -100,7 +110,7 @@ class KnowledgeStore:
             metadatas=metadatas,
         )
 
-        return len(chunks)
+        return len(chunks), False
 
     def search(self, query: str, top_k: int | None = None) -> list[dict]:
         """Search the knowledge base by semantic similarity.
