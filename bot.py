@@ -85,7 +85,13 @@ async def save_command(interaction: discord.Interaction, content: str):
                 added_by=str(interaction.user.id),
             )
 
-        num_chunks = await asyncio.to_thread(store.ingest, doc)
+        num_chunks, is_duplicate = await asyncio.to_thread(store.ingest, doc)
+
+        if is_duplicate:
+            await interaction.followup.send(
+                f"Already in your knowledge base — skipped. ({num_chunks} chunks exist)"
+            )
+            return
 
         embed = discord.Embed(
             title="Saved to knowledge base",
