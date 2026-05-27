@@ -121,7 +121,7 @@ async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.response.defer(thinking=True)
 
     try:
-        result = await asyncio.to_thread(retriever.ask, question)
+        result = await asyncio.to_thread(retriever.ask, question, str(interaction.user.id))
 
         embed = discord.Embed(
             title=question[:256],
@@ -157,6 +157,14 @@ async def ask_command(interaction: discord.Interaction, question: str):
     except Exception as e:
         log.error(f"Ask failed: {e}", exc_info=True)
         await interaction.followup.send(f"Something went wrong: {e}")
+
+
+# ── /forget ──────────────────────────────────────────────────────────
+
+@tree.command(name="forget", description="Clear your conversation history for /ask")
+async def forget_command(interaction: discord.Interaction):
+    retriever.clear_history(str(interaction.user.id))
+    await interaction.response.send_message("Conversation history cleared. Next `/ask` starts fresh.")
 
 
 # ── /search ──────────────────────────────────────────────────────────
