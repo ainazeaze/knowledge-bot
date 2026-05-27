@@ -1,7 +1,11 @@
 """RAG retriever: search knowledge base and generate grounded answers."""
 
+from collections import deque
+
 import config
 from ingestion import KnowledgeStore
+
+HISTORY_LENGTH = 5  # Q&A pairs to keep per user
 
 
 def _make_llm_client():
@@ -40,11 +44,17 @@ class Retriever:
             self.provider_name = "none"
             self.llm_available = False
 
+        # Per-user conversation history: {user_id: deque([(question, answer), ...])}
+        self._history: dict[str, deque] = {}
+
     def search(self, query: str, top_k: int | None = None) -> list[dict]:
         """Pure vector search — no LLM. Returns ranked results."""
         return self.store.search(query, top_k)
 
-    def ask(self, question: str) -> dict:
+    def clear_history(self, user_id: str) -> None:
+        self._history.pop(user_id, None)
+
+    def ask(self, question: str, user_id: str) -> dict:
         """RAG pipeline: retrieve context, then generate an answer.
 
         Returns a dict with:
@@ -69,8 +79,14 @@ class Retriever:
                 "used_llm": False,
             }
 
+        history = self._history.get(user_id, deque())
         context = self._build_context(results)
-        answer = self._generate_answer(question, context, results)
+        answer = self._generate_answer(question, context, history, results)
+
+        # Store the Q&A pair for future turns
+        if user_id not in self._history:
+            self._history[user_id] = deque(maxlen=HISTORY_LENGTH)
+        self._history[user_id].append((question, answer))
 
         return {
             "answer": answer,
@@ -85,42 +101,56 @@ class Retriever:
             parts.append(f"[Source {i}: {r['title']} ({source_label})]\n{r['text']}\n")
         return "\n---\n".join(parts)
 
-    def _generate_answer(self, question: str, context: str, results: list[dict]) -> str:
+    def _build_messages(self, question: str, context: str, history: deque) -> list[dict]:
+        """Build the messages array with history + current question."""
+        messages = []
+
+        # Inject prior turns as plain Q&A (no context, the model already saw it)
+        for past_question, past_answer in history:
+            messages.append({"role": "user", "content": past_question})
+            messages.append({"role": "assistant", "content": past_answer})
+
+        # Current turn includes the fresh retrieved context
+        messages.append({
+            "role": "user",
+            "content": f"Context from my knowledge base:\n\n{context}\n\n---\n\nQuestion: {question}",
+        })
+
+        return messages
+
+    def _generate_answer(self, question: str, context: str, history: deque, results: list[dict]) -> str:
         system_prompt = (
             "You are a helpful knowledge base assistant. Answer the user's question "
             "based ONLY on the provided context. If the context doesn't contain enough "
             "information to fully answer, say so honestly. Reference which sources you "
             "used. Keep answers concise but complete."
         )
-        user_message = f"Context from my knowledge base:\n\n{context}\n\n---\n\nQuestion: {question}"
+        messages = self._build_messages(question, context, history)
 
         try:
             if config.LLM_PROVIDER.lower() == "claude":
-                return self._call_claude(system_prompt, user_message)
+                return self._call_claude(system_prompt, messages)
             else:
-                return self._call_openai_compat(system_prompt, user_message)
+                return self._call_openai_compat(system_prompt, messages)
         except Exception as e:
             return (
                 f"LLM error: {e}\n\nHere are the raw search results instead:\n\n"
                 + self._format_search_results(results)
             )
 
-    def _call_claude(self, system_prompt: str, user_message: str) -> str:
+    def _call_claude(self, system_prompt: str, messages: list[dict]) -> str:
         response = self._client.messages.create(
             model=self._model,
             max_tokens=1024,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages,
         )
         return response.content[0].text
 
-    def _call_openai_compat(self, system_prompt: str, user_message: str) -> str:
+    def _call_openai_compat(self, system_prompt: str, messages: list[dict]) -> str:
         response = self._client.chat.completions.create(
             model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
+            messages=[{"role": "system", "content": system_prompt}] + messages,
         )
         return response.choices[0].message.content
 
