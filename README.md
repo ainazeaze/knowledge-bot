@@ -85,12 +85,8 @@ grounded answer with source references.
 **Searching:** `/search` does a pure vector similarity search without LLM generation —
 useful for browsing what you've saved.
 
-## Customization Ideas
-
+## TODO 
 - Add PDF ingestion (use `PyMuPDF` or `pdfplumber`)
-- Add scheduled ingestion from RSS feeds
-- Add per-user knowledge bases (use Discord user ID as collection namespace)
-- Add a web UI with Gradio alongside the Discord bot
 
 ## LLM Usage
 This project was made in collaboration with Claude Code, testing how fast we can build actually useful things now with AI.
