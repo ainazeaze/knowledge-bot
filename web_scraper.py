@@ -1,8 +1,9 @@
 """Web content extraction using trafilatura."""
 
-import trafilatura
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+import trafilatura
 
 
 @dataclass
@@ -18,11 +19,7 @@ class ScrapedContent:
 
 
 def scrape_url(url: str) -> ScrapedContent:
-    """Download and extract main content from a URL.
-
-    Uses trafilatura which is excellent at extracting article text
-    while stripping nav, ads, footers, etc.
-    """
+    """Download and extract main content from a URL."""
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
         raise ValueError(f"Failed to download: {url}")
