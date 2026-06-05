@@ -1,7 +1,6 @@
 """Ingestion pipeline: chunk text, embed, and store in ChromaDB."""
 
 import hashlib
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -68,9 +67,7 @@ class KnowledgeStore:
 
         existing = self.collection.get(where={"doc_id": doc_id}, limit=1, include=[])
         if existing["ids"]:
-            existing_count = self.collection.get(
-                where={"doc_id": doc_id}, include=[]
-            )
+            existing_count = self.collection.get(where={"doc_id": doc_id}, include=[])
             return len(existing_count["ids"]), True
 
         chunks = self.chunk_text(doc.text)
