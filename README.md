@@ -85,10 +85,3 @@ grounded answer with source references.
 **Searching:** `/search` does a pure vector similarity search without LLM generation —
 useful for browsing what you've saved.
 
-## TODO 
-- Add PDF ingestion (use `PyMuPDF` or `pdfplumber`)
-
-## LLM Usage
-This project was made in collaboration with Claude Code, testing how fast we can build actually useful things now with AI.
-## Done
-- Swap Claude for a local LLM (Ollama + Mistral/Llama)
