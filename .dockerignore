@@ -1,0 +1,13 @@
+.env
+.env.local
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+chroma_data/
+.cache/
+models/
+.git/
+.DS_Store
+*.log
