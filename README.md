@@ -63,6 +63,7 @@ python bot.py
 ```
 knowledge-bot/
 ├── bot.py              # Main bot entry point + slash commands
+├── mcp_server.py       # MCP server exposing the knowledge base as tools
 ├── ingestion.py        # Document chunking and embedding pipeline
 ├── retriever.py        # Vector search and RAG answer generation
 ├── web_scraper.py      # URL content extraction
@@ -84,4 +85,43 @@ grounded answer with source references.
 
 **Searching:** `/search` does a pure vector similarity search without LLM generation —
 useful for browsing what you've saved.
+
+## LLM Providers
+
+The bot supports two LLM backends, switchable via `.env`:
+
+```
+LLM_PROVIDER=ollama        # local, recommended
+LLM_PROVIDER=claude        # Anthropic API
+```
+
+**Ollama setup:**
+1. Install Ollama from [ollama.com](https://ollama.com)
+2. Pull a model: `ollama pull qwen2.5:14b`
+3. Set `OLLAMA_MODEL=qwen2.5:14b` in `.env`
+
+For cross-language support (save in French, ask in English), the embedding model defaults to `paraphrase-multilingual-MiniLM-L12-v2`.
+
+## MCP Server
+
+The knowledge base is also exposed as an MCP server, letting you query it directly from Claude Code without going through Discord.
+
+**Tools available:**
+- `search_knowledge_base(query, top_k)` — semantic search over saved content
+- `save_to_knowledge_base(text, title, source)` — add a text snippet
+- `list_documents(limit)` — list recently saved documents
+
+**Register with Claude Code:**
+
+```bash
+claude mcp add brainbot /path/to/.venv/bin/python /path/to/knowledge-bot/mcp_server.py
+```
+
+**Run standalone:**
+
+```bash
+python mcp_server.py
+```
+
+The MCP server shares the same ChromaDB as the Discord bot — anything saved via `/save` is instantly queryable through MCP and vice versa.
 
