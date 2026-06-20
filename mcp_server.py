@@ -50,6 +50,23 @@ def save_to_knowledge_base(text: str, title: str, source: str = "manual") -> str
 
 
 @mcp.tool()
+def save_url_to_knowledge_base(url: str) -> str:
+    """Scrape a URL and save its content to the knowledge base.
+
+    Use this to save an article or web page by URL instead of pasting raw text.
+    """
+    from web_scraper import scrape_url
+    scraped = scrape_url(url)
+    if not scraped.is_valid:
+        return "Couldn't extract meaningful content from that URL."
+    doc = Document(text=scraped.text, title=scraped.title, source=url, added_by="mcp")
+    num_chunks, is_duplicate = store.ingest(doc)
+    if is_duplicate:
+        return f"Already in knowledge base — skipped. ({num_chunks} chunks exist)"
+    return f"Saved '{scraped.title}' — {num_chunks} chunks created."
+
+
+@mcp.tool()
 def list_documents(limit: int = 10) -> str:
     """List recently saved documents in the knowledge base."""
     docs = store.list_documents(limit=limit)
