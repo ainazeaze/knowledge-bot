@@ -122,6 +122,9 @@ class KnowledgeStore:
             n_results=k,
             include=["documents", "metadatas", "distances"],
         )
+        assert results["documents"] is not None
+        assert results["metadatas"] is not None
+        assert results["distances"] is not None
 
         items = []
         for i in range(len(results["ids"][0])):
@@ -144,6 +147,7 @@ class KnowledgeStore:
             include=["metadatas"],
             limit=500,  # get a batch to deduplicate
         )
+        assert all_items["metadatas"] is not None
 
         seen = {}
         for meta in all_items["metadatas"]:
