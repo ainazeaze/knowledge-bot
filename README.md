@@ -10,16 +10,6 @@ A personal knowledge base that lives in your Discord server. Save articles, note
 - `/list` — Show recently saved items
 - `/delete <id>` — Remove an item from the knowledge base
 
-## Tech Stack
-
-- **discord.py** — Bot framework
-- **ChromaDB** — Local vector database (zero config)
-- **sentence-transformers** — Local embeddings (`all-MiniLM-L6-v2`, runs on CPU)
-- **Anthropic Claude API** — Answer generation (optional, can swap for any LLM)
-- **trafilatura** — Web page content extraction
-
-## Setup
-
 ### 1. Create a Discord Bot
 
 1. Go to https://discord.com/developers/applications
@@ -40,9 +30,9 @@ If you want AI-generated answers (not just search results):
 
 ```bash
 cd knowledge-bot
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate  
+uv sync
 ```
 
 ### 4. Configure
@@ -56,21 +46,6 @@ cp .env.example .env
 
 ```bash
 python bot.py
-```
-
-## Project Structure
-
-```
-knowledge-bot/
-├── bot.py              # Main bot entry point + slash commands
-├── mcp_server.py       # MCP server exposing the knowledge base as tools
-├── ingestion.py        # Document chunking and embedding pipeline
-├── retriever.py        # Vector search and RAG answer generation
-├── web_scraper.py      # URL content extraction
-├── config.py           # Settings and env vars
-├── requirements.txt
-├── .env.example
-└── README.md
 ```
 
 ## How It Works
@@ -94,14 +69,6 @@ The bot supports two LLM backends, switchable via `.env`:
 LLM_PROVIDER=ollama        # local, recommended
 LLM_PROVIDER=claude        # Anthropic API
 ```
-
-**Ollama setup:**
-1. Install Ollama from [ollama.com](https://ollama.com)
-2. Pull a model: `ollama pull qwen2.5:14b`
-3. Set `OLLAMA_MODEL=qwen2.5:14b` in `.env`
-
-For cross-language support (save in French, ask in English), the embedding model defaults to `paraphrase-multilingual-MiniLM-L12-v2`.
-
 ## MCP Server
 
 The knowledge base is also exposed as an MCP server, letting you query it directly from Claude Code without going through Discord.
@@ -116,12 +83,4 @@ The knowledge base is also exposed as an MCP server, letting you query it direct
 ```bash
 claude mcp add brainbot /path/to/.venv/bin/python /path/to/knowledge-bot/mcp_server.py
 ```
-
-**Run standalone:**
-
-```bash
-python mcp_server.py
-```
-
 The MCP server shares the same ChromaDB as the Discord bot — anything saved via `/save` is instantly queryable through MCP and vice versa.
-
