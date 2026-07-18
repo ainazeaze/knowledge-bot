@@ -3,6 +3,8 @@ import config
 from ingestion import KnowledgeStore
 from retriever import Retriever
 
+
+# TODO : add more test samples
 TEST_CASES = [
     {
         "question": "What is machine learning?",
