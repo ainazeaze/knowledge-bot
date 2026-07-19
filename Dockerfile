@@ -13,4 +13,4 @@ COPY . .
 # ChromaDB persists here — mount a volume to keep data across restarts
 VOLUME ["/app/chroma_data"]
 
-CMD ["python", "bot.py"]
+CMD ["python", "interfaces/bot.py"]
