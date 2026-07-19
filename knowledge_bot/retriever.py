@@ -2,8 +2,8 @@
 
 from collections import deque
 
-import config
-from ingestion import KnowledgeStore
+from . import config
+from .ingestion import KnowledgeStore
 
 HISTORY_LENGTH = 5  # Q&A pairs to keep per user
 

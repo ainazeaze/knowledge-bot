@@ -1,7 +1,7 @@
 
-import config
-from ingestion import KnowledgeStore
-from retriever import Retriever
+from knowledge_bot import config
+from knowledge_bot.ingestion import KnowledgeStore
+from knowledge_bot.retriever import Retriever
 
 
 # TODO : add more test samples

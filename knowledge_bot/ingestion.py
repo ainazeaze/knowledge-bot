@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-import config
+from . import config
 
 
 @dataclass

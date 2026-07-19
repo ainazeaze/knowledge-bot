@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from ingestion import KnowledgeStore, Document
+from knowledge_bot.ingestion import KnowledgeStore, Document
 
 store = KnowledgeStore()
 mcp = FastMCP("BrainBot")
@@ -55,7 +55,7 @@ def save_url_to_knowledge_base(url: str) -> str:
 
     Use this to save an article or web page by URL instead of pasting raw text.
     """
-    from web_scraper import scrape_url
+    from knowledge_bot.web_scraper import scrape_url
     scraped = scrape_url(url)
     if not scraped.is_valid:
         return "Couldn't extract meaningful content from that URL."
