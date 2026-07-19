@@ -1,4 +1,8 @@
 
+import sys
+from unittest.mock import MagicMock
+sys.modules.setdefault("langchain_community.chat_models.vertexai", MagicMock())
+
 from knowledge_bot import config
 from knowledge_bot.ingestion import KnowledgeStore
 from knowledge_bot.retriever import Retriever
@@ -18,19 +22,19 @@ TEST_CASES = [
 
 
 def _build_judge_llm():
-    """Return a LangChain chat model to use as the RAGAS judge."""
-    provider = config.LLM_PROVIDER.lower()
+    from openai import OpenAI
+    from ragas.llms import llm_factory
 
-    if provider == "claude":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            model="claude-haiku-4-5-20251001",
-            api_key=config.ANTHROPIC_API_KEY,
-        )
+    # Ollama speaks OpenAI's API format, so we point the client at localhost.
+    client = OpenAI(base_url=config.OLLAMA_BASE_URL, api_key="ollama")
+    return llm_factory(config.OLLAMA_MODEL, client=client)
 
-    from langchain_ollama import ChatOllama
-    base_url = config.OLLAMA_BASE_URL.replace("/v1", "")
-    return ChatOllama(model=config.OLLAMA_MODEL, base_url=base_url)
+
+def _build_judge_embeddings():
+    from ragas.embeddings import HuggingfaceEmbeddings
+
+    # Reuse the same embedding model the bot uses — no extra download needed.
+    return HuggingfaceEmbeddings(model_name=config.EMBEDDING_MODEL)
 
 
 def collect_samples(retriever: Retriever) -> list[dict]:
@@ -89,10 +93,9 @@ def print_scorecard(results) -> None:
 def main():
     try:
         from ragas import EvaluationDataset, evaluate
-        from ragas.metrics import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
-        from ragas.llms import LangchainLLMWrapper
+        from ragas.metrics.collections import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
     except ImportError:
-        print("RAGAS not installed. Run: pip install ragas langchain-anthropic langchain-ollama")
+        print("RAGAS not installed. Run: pip install ragas")
         return
 
     print("Step 1/3 — Running test questions through the bot...")
@@ -104,17 +107,16 @@ def main():
     dataset = EvaluationDataset.from_list(samples)
 
     print("\nStep 3/3 — Scoring with LLM judge (this takes a moment)...")
-    judge_llm = LangchainLLMWrapper(_build_judge_llm())
+    judge_llm = _build_judge_llm()
 
     results = evaluate(
         dataset=dataset,
         metrics=[
-            Faithfulness(),
-            AnswerRelevancy(),
-            ContextPrecision(),
-            ContextRecall(),
+            Faithfulness(llm=judge_llm),
+            AnswerRelevancy(llm=judge_llm),
+            ContextPrecision(llm=judge_llm),
+            ContextRecall(llm=judge_llm),
         ],
-        llm=judge_llm,
     )
 
     print_scorecard(results)
