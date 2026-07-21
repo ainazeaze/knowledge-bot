@@ -1,86 +1,53 @@
-# BrainBot — Discord Knowledge Base Bot
+# knowledge-bot
 
-A personal knowledge base that lives in your Discord server. Save articles, notes, and URLs, then query them in natural language using RAG (Retrieval-Augmented Generation).
-
-## Features
-
-- `/save <url_or_text>` — Save a URL or text snippet to your knowledge base
-- `/ask <question>` — Ask a natural language question, get an answer grounded in your saved content
-- `/search <keywords>` — Browse saved items by keyword similarity
-- `/list` — Show recently saved items
-- `/delete <id>` — Remove an item from the knowledge base
-
-### 1. Create a Discord Bot
-
-1. Go to https://discord.com/developers/applications
-2. Click "New Application" → name it → go to "Bot" tab
-3. Click "Reset Token" → copy the token
-4. Enable "Message Content Intent" under Privileged Gateway Intents
-5. Go to OAuth2 → URL Generator → select `bot` + `applications.commands`
-6. Select permissions: Send Messages, Embed Links, Read Message History
-7. Copy the URL and open it to invite the bot to your server
-
-### 2. Get an Anthropic API Key (optional)
-
-If you want AI-generated answers (not just search results):
-1. Go to https://console.anthropic.com/
-2. Create an API key
-
-### 3. Install Dependencies
-
-```bash
-cd knowledge-bot
-uv venv
-source .venv/bin/activate  
-uv sync
-```
-
-### 4. Configure
-
-```bash
-cp .env.example .env
-# Edit .env with your tokens
-```
-
-### 5. Run
-
-```bash
-python bot.py
-```
+A personal RAG knowledge base exposed as MCP tools for Claude Code. Save articles, notes, and URLs — then ask Claude Code questions grounded in your saved content.
 
 ## How It Works
 
-**Saving:** When you `/save` a URL, the bot scrapes the page content, splits it into
-overlapping chunks (~500 tokens each), embeds each chunk using a local model, and
-stores the vectors + metadata in ChromaDB.
+**Saving:** content is scraped (if a URL) or taken as-is, split into overlapping chunks, embedded with a local sentence-transformers model, and stored in ChromaDB.
 
-**Asking:** When you `/ask` a question, the bot embeds your query, retrieves the top-5
-most similar chunks from ChromaDB, and sends them as context to Claude to generate a
-grounded answer with source references.
+**Querying:** Claude Code calls `search_knowledge_base`, retrieves the most semantically similar chunks, and uses them as context to answer your question. Claude does the reasoning — the bot handles the retrieval.
 
-**Searching:** `/search` does a pure vector similarity search without LLM generation —
-useful for browsing what you've saved.
-
-## LLM Providers
-
-The bot supports two LLM backends, switchable via `.env`:
-
-```
-LLM_PROVIDER=ollama        # local, recommended
-LLM_PROVIDER=claude        # Anthropic API
-```
-## MCP Server
-
-The knowledge base is also exposed as an MCP server, letting you query it directly from Claude Code without going through Discord.
-
-**Tools available:**
-- `search_knowledge_base(query, top_k)` — semantic search over saved content
-- `save_to_knowledge_base(text, title, source)` — add a text snippet
-- `list_documents(limit)` — list recently saved documents
-
-**Register with Claude Code:**
+## Setup
 
 ```bash
-claude mcp add brainbot /path/to/.venv/bin/python /path/to/knowledge-bot/mcp_server.py
+git clone <repo>
+cd knowledge-bot
+uv sync
 ```
-The MCP server shares the same ChromaDB as the Discord bot — anything saved via `/save` is instantly queryable through MCP and vice versa.
+
+Copy the example env file (defaults work out of the box):
+
+```bash
+cp .env.example .env
+```
+
+Register the MCP server with Claude Code:
+
+```bash
+claude mcp add brainbot /path/to/knowledge-bot/.venv/bin/python /path/to/knowledge-bot/interfaces/mcp_server.py
+```
+
+Restart Claude Code — the tools will be available in every session.
+
+## MCP Tools
+
+| Tool | Description |
+|---|---|
+| `search_knowledge_base(query, top_k)` | Semantic search over saved content |
+| `save_to_knowledge_base(text, title, source)` | Save a text snippet |
+| `save_url_to_knowledge_base(url)` | Scrape and save a URL |
+| `list_documents(limit)` | List recently saved documents |
+
+## Stack
+
+- **ChromaDB** — vector store (persisted locally)
+- **sentence-transformers** — multilingual embeddings, runs on CPU
+- **trafilatura** — web scraping
+- **FastMCP** — MCP server
+
+## Tests
+
+```bash
+uv run pytest tests/ -v
+```
