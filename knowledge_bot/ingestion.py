@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from . import config
+
+RERANK_FACTOR = 4  # fetch top_k * this from ChromaDB, then re-rank down to top_k
 
 
 @dataclass
@@ -30,6 +32,7 @@ class KnowledgeStore:
             metadata={"hnsw:space": "cosine"},
         )
         self.embedder = SentenceTransformer(config.EMBEDDING_MODEL)
+        self._reranker: CrossEncoder | None = None
 
     def chunk_text(self, text: str) -> list[str]:
         """Split text into overlapping chunks.
@@ -109,37 +112,50 @@ class KnowledgeStore:
 
         return len(chunks), False
 
+    @property
+    def reranker(self) -> CrossEncoder:
+        if self._reranker is None:
+            self._reranker = CrossEncoder(config.RERANKER_MODEL)
+        return self._reranker
+
     def search(self, query: str, top_k: int | None = None) -> list[dict]:
-        """Search the knowledge base by semantic similarity.
+        """Search the knowledge base with bi-encoder retrieval + cross-encoder re-ranking.
 
         Returns a list of dicts with keys: text, source, title, score, doc_id
         """
         k = top_k or config.TOP_K
-        query_embedding = self.embedder.encode([query]).tolist()
+        n_candidates = min(k * RERANK_FACTOR, self.collection.count())
+        if n_candidates == 0:
+            return []
 
+        query_embedding = self.embedder.encode([query]).tolist()
         results = self.collection.query(
             query_embeddings=query_embedding,
-            n_results=k,
+            n_results=n_candidates,
             include=["documents", "metadatas", "distances"],
         )
         assert results["documents"] is not None
         assert results["metadatas"] is not None
-        assert results["distances"] is not None
 
-        items = []
-        for i in range(len(results["ids"][0])):
-            items.append(
-                {
-                    "text": results["documents"][0][i],
-                    "source": results["metadatas"][0][i]["source"],
-                    "title": results["metadatas"][0][i]["title"],
-                    "doc_id": results["metadatas"][0][i]["doc_id"],
-                    "added_at": results["metadatas"][0][i]["added_at"],
-                    "score": 1 - results["distances"][0][i],  # cosine similarity
-                }
-            )
+        candidates = [
+            {
+                "text": results["documents"][0][i],
+                "source": results["metadatas"][0][i]["source"],
+                "title": results["metadatas"][0][i]["title"],
+                "doc_id": results["metadatas"][0][i]["doc_id"],
+                "added_at": results["metadatas"][0][i]["added_at"],
+            }
+            for i in range(len(results["ids"][0]))
+        ]
 
-        return items
+        pairs = [(query, c["text"]) for c in candidates]
+        scores = self.reranker.predict(pairs).tolist()
+
+        for candidate, score in zip(candidates, scores):
+            candidate["score"] = score
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:k]
 
     def list_documents(self, limit: int = 10) -> list[dict]:
         """List recently added documents (unique by doc_id)."""
