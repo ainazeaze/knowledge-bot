@@ -32,10 +32,11 @@ def test_search_finds_ingested_content(store):
     assert any(r["title"] == "Quantum" for r in results)
 
 
-def test_search_score_is_between_0_and_1(store):
+def test_search_score_is_float(store):
+    # Cross-encoder scores are raw logits — no fixed range, just floats
     results = store.search("test", top_k=1)
     if results:
-        assert 0.0 <= results[0]["score"] <= 1.0
+        assert isinstance(results[0]["score"], float)
 
 
 def test_delete_removes_all_chunks(store):
