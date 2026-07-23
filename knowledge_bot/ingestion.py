@@ -14,12 +14,9 @@ RERANK_FACTOR = 4  # fetch top_k * this from ChromaDB, then re-rank down to top_
 
 @dataclass
 class Document:
-    """A document to ingest into the knowledge base."""
-
     text: str
     source: str  # URL or "manual"
     title: str
-    added_by: str  # Discord user ID
 
 
 class KnowledgeStore:
@@ -94,7 +91,6 @@ class KnowledgeStore:
                     "total_chunks": len(chunks),
                     "source": doc.source,
                     "title": doc.title,
-                    "added_by": doc.added_by,
                     "added_at": now,
                 }
             )
@@ -173,7 +169,6 @@ class KnowledgeStore:
                     "doc_id": doc_id,
                     "title": meta["title"],
                     "source": meta["source"],
-                    "added_by": meta["added_by"],
                     "added_at": meta["added_at"],
                     "total_chunks": meta["total_chunks"],
                 }

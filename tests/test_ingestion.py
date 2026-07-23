@@ -2,7 +2,7 @@ from knowledge_bot.ingestion import Document
 
 
 def _doc(text, title="test"):
-    return Document(text=text, title=title, source="manual", added_by="test")
+    return Document(text=text, title=title, source="manual")
 
 
 def test_ingest_returns_chunk_count(store):

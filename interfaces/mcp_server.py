@@ -22,9 +22,8 @@ def search_knowledge_base(query: str, top_k: int = 5) -> str:
 
     lines = []
     for i, r in enumerate(results, 1):
-        score_pct = f"{r['score']:.0%}"
         source = r["source"] if r["source"] != "manual" else "manual note"
-        lines.append(f"[{i}] {r['title']} ({score_pct} match) — {source}")
+        lines.append(f"[{i}] {r['title']} — {source}")
         lines.append(r["text"])
         lines.append("")
 
@@ -40,7 +39,7 @@ def save_to_knowledge_base(text: str, title: str, source: str = "manual") -> str
         title: A short descriptive title.
         source: Optional source URL or identifier.
     """
-    doc = Document(text=text, title=title, source=source, added_by="mcp")
+    doc = Document(text=text, title=title, source=source)
     num_chunks, is_duplicate = store.ingest(doc)
 
     if is_duplicate:
@@ -59,7 +58,7 @@ def save_url_to_knowledge_base(url: str) -> str:
     scraped = scrape_url(url)
     if not scraped.is_valid:
         return "Couldn't extract meaningful content from that URL."
-    doc = Document(text=scraped.text, title=scraped.title, source=url, added_by="mcp")
+    doc = Document(text=scraped.text, title=scraped.title, source=url)
     num_chunks, is_duplicate = store.ingest(doc)
     if is_duplicate:
         return f"Already in knowledge base — skipped. ({num_chunks} chunks exist)"
