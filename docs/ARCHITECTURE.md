@@ -2,20 +2,20 @@
 
 ## The big picture
 
-When you type `/save <url>` or `/ask <question>` in Discord, a chain of components kicks in. Each file owns one layer of that chain:
+BrainBot is a personal RAG knowledge base exposed as MCP tools to Claude Code. Claude Code handles the reasoning, and the bot handles the retrieval.
 
 ```
-Discord user
+Claude Code
+     │  (MCP stdio)
+  interfaces/mcp_server.py   ← tool definitions
      │
-  bot.py          ← entry point, Discord interface
+  knowledge_bot/ingestion.py ← full RAG pipeline
      │
-  web_scraper.py  ← fetches & cleans URL content (only for /save <url>)
+  knowledge_bot/web_scraper.py ← URL → clean text (for save_url tool)
      │
-  ingestion.py    ← chunks text, embeds it, stores in ChromaDB
+  knowledge_bot/config.py    ← env vars used by all of the above
      │
-  retriever.py    ← searches ChromaDB, calls Claude API for answers
-     │
-  config.py       ← env vars used by all of the above
+  ChromaDB (./chroma_data/)  ← persisted vector store
 ```
 
 ---
@@ -24,112 +24,117 @@ Discord user
 
 ### `config.py` — env vars, globally imported
 
-The simplest file. Loads `.env` and exposes everything as module-level constants (`DISCORD_TOKEN`, `ANTHROPIC_API_KEY`, `CHUNK_SIZE`, etc.). Every other file imports this — it's the single source of truth for configuration.
+Loads `.env` and exposes everything as module-level constants. Every other module imports this.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | Bi-encoder for chunk/query embeddings |
+| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder for re-ranking |
+| `CHROMA_DB_PATH` | `./chroma_data` | Where ChromaDB persists to disk |
+| `TOP_K` | `5` | Final number of results returned per search |
+| `CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `CHUNK_OVERLAP` | `200` | Overlap between consecutive chunks |
 
 ---
 
 ### `web_scraper.py` — URL → clean text
 
-Only used when you `/save` a URL (not raw text). Calls `trafilatura.fetch_url()` to download the page, then `trafilatura.extract()` to strip out nav, ads, footers, and return just the article body. Returns a `ScrapedContent` dataclass with `.text`, `.title`, and `.is_valid` (checks that at least 50 chars came back).
-
-No ChromaDB, no embeddings — just HTTP in, clean text out.
+Only used when saving a URL. Calls `trafilatura` to download and strip the page down to article body text. Returns a `ScrapedContent` dataclass with `.text`, `.title`, and `.is_valid` (requires at least 50 chars).
 
 ---
 
-### `ingestion.py` — text → vectors → ChromaDB
+### `ingestion.py` — the full RAG pipeline
 
-The storage engine. Owns two things:
+The core of the project. `KnowledgeStore` owns ingestion and a three-stage search pipeline.
 
-**`Document` dataclass** — a plain container for content before storage: `text`, `source` (URL or `"manual"`), `title`, `added_by` (Discord user ID).
+#### Ingestion
 
-**`KnowledgeStore` class** — does three jobs:
+1. **Chunking** (`chunk_text`): splits text into overlapping character-based chunks, preferring paragraph boundaries. Overlap means sentences near a boundary appear in both adjacent chunks so retrieval doesn't miss them.
 
-1. **Chunking** (`chunk_text`): Splits long text into overlapping pieces so a 10,000-word article becomes ~15 chunks of 2000 chars with 200-char overlap. The overlap means a sentence straddling a boundary appears in both chunks, so retrieval doesn't miss it.
+2. **Deduplication**: MD5 hash of the full text becomes the `doc_id`. If a matching `doc_id` already exists in ChromaDB, ingestion is skipped.
 
-2. **Embedding** (`ingest`): Runs each chunk through `SentenceTransformer("all-MiniLM-L6-v2")` — a small local model that converts text to a 384-dimensional vector. No API call, runs on CPU. These vectors are what make semantic search possible (similar meaning = similar vector).
+3. **Embedding + storage**: all chunks are embedded in one batch with the bi-encoder (`SentenceTransformer`), then upserted into ChromaDB with metadata (source, title, timestamp, doc\_id, chunk index).
 
-3. **Storage** (`ingest`, `search`, `delete_document`, `list_documents`): Talks to ChromaDB, a local vector database that persists to `./chroma_data/`. ChromaDB stores the chunk text, embedding vector, and metadata (source URL, title, timestamp, doc ID) together. The `doc_id` is an MD5 hash of the first 500 chars of the document — it ties all chunks from the same document together so you can delete a whole document at once.
+#### Search — three-stage pipeline
+
+```
+Query
+  ├─ 1. Vector search (ChromaDB)  ─────────────────┐
+  │       bi-encoder embeds query                   │
+  │       cosine similarity against stored vectors  │  RRF merge
+  │       → ranked list of chunk IDs               ├──────────────→ candidate pool
+  │                                                 │
+  └─ 2. BM25 keyword search ───────────────────────┘
+          tokenized exact-term scoring
+          → ranked list of chunk IDs
+
+  3. Cross-encoder re-rank
+          (query, chunk_text) pairs fed to cross-encoder
+          raw relevance score per pair
+          sort descending → top K returned
+```
+
+**Stage 1 — Vector search**: the bi-encoder embeds the query and ChromaDB does cosine similarity against all stored chunk embeddings. Returns `top_k × 4` candidates. Great for semantic matches ("car" finds "automobile").
+
+**Stage 2 — BM25 keyword search**: a classic term-frequency index (`rank-bm25`) built lazily from all chunks in ChromaDB. Scores the same candidate pool by exact keyword overlap. Great for precise terms that embeddings can compress away (version numbers, names, acronyms).
+
+**Stage 3 — RRF fusion**: Reciprocal Rank Fusion merges the two ranked lists without needing to tune weights. Each chunk gets a score of `Σ 1 / (60 + rank)` across both lists — chunks that rank well in both float to the top.
+
+**Stage 4 — Cross-encoder re-rank**: the cross-encoder sees `(query, chunk)` as a single input (unlike the bi-encoder which processes them separately), giving it a richer signal for relevance. Runs on the fused candidate pool and produces the final ranking.
+
+The BM25 index is held in memory and invalidated whenever chunks are added or deleted, so it's always rebuilt fresh from ChromaDB on the next search.
 
 ---
 
-### `retriever.py` — question → answer
+### `interfaces/mcp_server.py` — MCP tool definitions
 
-**`Retriever` class** — the RAG layer. Wraps `KnowledgeStore` and adds Claude on top.
+Exposes four tools to Claude Code via `FastMCP` over stdio:
 
-**`search(query)`**: Calls `store.search()` and returns ranked results. Pure vector similarity, no LLM.
-
-**`ask(question)`** — the full RAG pipeline:
-1. Embeds the question using the same model as ingestion
-2. Asks ChromaDB for the top-K most similar chunks (default 5)
-3. If no API key → formats those chunks as readable text and returns
-4. If API key present → builds a context string from the chunks, then calls Claude with a system prompt constrained to "answer only from the provided context"
-5. Returns the answer + source list + a `used_llm` flag
-
-The key insight of RAG is that Claude never "remembers" your documents — it reads them fresh every time as context in the prompt. This keeps answers grounded and avoids hallucination.
-
----
-
-### `bot.py` — Discord interface, entry point
-
-Sets up a `discord.Client` and an `app_commands.CommandTree` (Discord's slash command system). All six commands follow the same pattern:
-
-1. `await interaction.response.defer(thinking=True)` — immediately tells Discord "I'm working on it", preventing the 3-second timeout
-2. Do the work (call `store` or `retriever`)
-3. Build a `discord.Embed` (the formatted card Discord displays)
-4. `await interaction.followup.send(embed=embed)`
-
-`store` and `retriever` are initialized in `on_ready()`, not at module level, because they need the event loop to be running.
-
-| Command | Calls |
+| Tool | What it does |
 |---|---|
-| `/save <url>` | `scrape_url()` → `store.ingest()` |
-| `/save <text>` | `store.ingest()` directly |
-| `/ask <question>` | `retriever.ask()` |
-| `/search <keywords>` | `retriever.search()` |
-| `/list` | `store.list_documents()` |
-| `/delete <id>` | `store.delete_document()` |
-| `/stats` | `store.list_documents()` + `store.total_chunks` |
+| `search_knowledge_base(query, top_k)` | Runs the full hybrid search pipeline, returns formatted results |
+| `save_to_knowledge_base(text, title, source)` | Ingests raw text |
+| `save_url_to_knowledge_base(url)` | Scrapes URL then ingests |
+| `list_documents(limit)` | Lists recently saved documents |
+
+Claude Code calls these automatically when the user's intent matches (e.g. "what do I know about X?" triggers `search_knowledge_base`).
 
 ---
 
 ## Data flows
 
-### `/save https://example.com/article`
+### Saving a URL
 
 ```
-bot.py: save_command()
-  → web_scraper.scrape_url("https://...")
-      → trafilatura downloads + extracts → ScrapedContent{text, title}
-  → Document{text, source="https://...", title, added_by="user_id"}
+save_url_to_knowledge_base(url)
+  → web_scraper.scrape_url(url)
+      → trafilatura: HTTP fetch + content extraction → ScrapedContent
+  → Document{text, title, source=url}
   → store.ingest(doc)
-      → chunk_text(doc.text) → ["chunk0", "chunk1", ...]
-      → embedder.encode(chunks) → [[0.12, -0.43, ...], ...]  (384-dim each)
-      → collection.upsert(ids, documents, embeddings, metadatas)
-          → written to ./chroma_data/ on disk
-  → returns num_chunks
-bot.py: sends Discord embed "Saved — 8 chunks"
+      → MD5 dedup check
+      → chunk_text() → ["chunk0", "chunk1", ...]
+      → embedder.encode(chunks) → vectors
+      → collection.upsert() → written to ./chroma_data/
+  → "Saved 'Title' — N chunks created."
 ```
 
-### `/ask "what did that article say about X?"`
+### Searching
 
 ```
-bot.py: ask_command()
-  → retriever.ask("what did that article say about X?")
-      → store.search(question)
-          → embedder.encode(["what did..."]) → [0.08, 0.71, ...]
-          → ChromaDB cosine similarity search → top 5 chunks
-      → _build_context(results) → formatted string of 5 chunks
-      → claude_client.messages.create(
-            system="answer only from context",
-            user="Context: <5 chunks>\n\nQuestion: what did..."
-        )
-      → returns answer text
-  → returns {answer, sources, used_llm=True}
-bot.py: sends Discord embed with answer + source links
+search_knowledge_base("what is RAG?")
+  → store.search("what is RAG?", top_k=5)
+      → vector search: embed query → ChromaDB top 20
+      → BM25 search: tokenize query → score all chunks → top 20
+      → RRF merge → unified candidate pool
+      → cross-encoder.predict([(query, chunk), ...]) → scores
+      → sort → top 5
+  → formatted result string → Claude Code uses as context
 ```
 
 ---
 
 ## What persists between restarts
 
-Only ChromaDB. The `./chroma_data/` directory is a local SQLite + index file. Everything else (Python objects, embedding model loaded into RAM) is reconstructed fresh each time the bot starts. There's no database server — ChromaDB is an embedded library, like SQLite.
+Only ChromaDB (`./chroma_data/`). Everything else — the embedding model, BM25 index, cross-encoder — is loaded or rebuilt fresh each time the MCP server starts.
+
+The BM25 index and both ML models are loaded lazily: the bi-encoder loads at server startup, the cross-encoder and BM25 index on the first search call.
