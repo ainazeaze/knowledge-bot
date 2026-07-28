@@ -3,6 +3,7 @@
 from mcp.server.fastmcp import FastMCP
 
 from knowledge_bot.ingestion import KnowledgeStore, Document
+from knowledge_bot.retrieval_graph import app
 
 store = KnowledgeStore()
 mcp = FastMCP("BrainBot")
@@ -10,12 +11,23 @@ mcp = FastMCP("BrainBot")
 
 @mcp.tool()
 def search_knowledge_base(query: str, top_k: int = 5) -> str:
-    """Search the knowledge base by semantic similarity.
+    """Search the knowledge base using agentic retrieval.
+
+    Runs hybrid search (BM25 + vector), fuses results with RRF, re-ranks with a
+    cross-encoder, then grades relevance with an LLM. If results are not relevant,
+    the query is automatically rewritten and the search is retried once.
 
     Use this to find saved articles, notes, or URLs related to a topic.
     Returns the most relevant chunks with their sources.
     """
-    results = store.search(query, top_k=top_k)
+    final_state = app.invoke({
+        "query": query,
+        "original_query": query,
+        "results": [],
+        "attempts": 0,
+        "should_rewrite": False,
+    })
+    results = final_state["results"]
 
     if not results:
         return "No results found for that query."
