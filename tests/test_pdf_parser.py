@@ -1,5 +1,4 @@
 import fitz
-import pytest
 from knowledge_bot.pdf_parser import parse_pdf
 
 
