@@ -76,6 +76,24 @@ def save_url_to_knowledge_base(url: str) -> str:
         return f"Already in knowledge base — skipped. ({num_chunks} chunks exist)"
     return f"Saved '{scraped.title}' — {num_chunks} chunks created."
 
+@mcp.tool()
+def save_pdf_to_knowledge_base(file_path: str) -> str:
+    """Parse a local PDF file and save its content to the knowledge base.
+
+    Args:
+        file_path: Absolute path to the PDF file on disk.
+    """
+    from knowledge_bot.pdf_parser import parse_pdf
+    pdf = parse_pdf(file_path)
+
+    if not pdf.is_valid:
+        return "Couldn't extract meaningful text from that PDF."
+    doc = Document(text=pdf.text, title=pdf.title, source="pdf")
+    num_chunks, is_duplicate = store.ingest(doc)
+
+    if is_duplicate:
+        return f"Already in knowledge base — skipped. ({num_chunks} chunks exist)"
+    return f"Saved '{pdf.title}' — {num_chunks} chunks created."
 
 @mcp.tool()
 def list_documents(limit: int = 10) -> str:
