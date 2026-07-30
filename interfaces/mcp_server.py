@@ -2,10 +2,11 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from knowledge_bot.ingestion import KnowledgeStore, Document
+from knowledge_bot.ingestion import Document
 from knowledge_bot.retrieval_graph import app
+from knowledge_bot.store import get_store
 
-store = KnowledgeStore()
+store = get_store()
 mcp = FastMCP("BrainBot")
 
 
@@ -26,6 +27,7 @@ def search_knowledge_base(query: str, top_k: int = 5) -> str:
         "results": [],
         "attempts": 0,
         "should_rewrite": False,
+        "top_k" : top_k
     })
     results = final_state["results"]
 

@@ -7,10 +7,9 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import SecretStr
 
 from . import config
-from .ingestion import KnowledgeStore
 from .logger import logger
+from .store import get_store
 
-store = KnowledgeStore()
 llm = ChatGroq(api_key=SecretStr(config.GROQ_API_KEY), model=config.GROQ_MODEL)
 
 class RetrievalState(TypedDict):
@@ -19,10 +18,11 @@ class RetrievalState(TypedDict):
     results : list[dict]
     attempts : int
     should_rewrite : bool
+    top_k : int
 
 def search_node(state: RetrievalState) -> dict:
     t0 = time.perf_counter()
-    results = store.search(state["query"])
+    results = get_store().search(state["query"], state["top_k"])
     elapsed = time.perf_counter() - t0
     top_score = results[0]["score"] if results else None
     logger.info(
