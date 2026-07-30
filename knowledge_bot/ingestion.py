@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import asyncio
 
 import chromadb
 from rank_bm25 import BM25Okapi
@@ -243,6 +244,10 @@ class KnowledgeStore:
         self.collection.delete(ids=all_items["ids"])
         self._bm25 = None
         return len(all_items["ids"])
+
+    async def async_ingest(self, doc: Document) -> tuple [int, bool]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.ingest, doc)
 
     @property
     def total_chunks(self) -> int:
