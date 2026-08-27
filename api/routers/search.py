@@ -1,14 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
+from pydantic import SecretStr
 
 from api.dependencies import get_store
 from api.schemas.search import SearchResponse, SearchResult
+from knowledge_bot import config
 from knowledge_bot.retrieval_graph import app
 
 router = APIRouter(prefix="/search", tags=["search"])
 
+llm = ChatGroq(api_key=SecretStr(config.GROQ_API_KEY), model=config.GROQ_MODEL)
+
 
 @router.get("", response_model=SearchResponse)
-def search(q: str, top_k: int = 5, store=Depends(get_store)):  # noqa : B008
+def search(q: str, top_k: int = 5, store=Depends(get_store)):  # noqa: B008
     final_state = app.invoke(
         {
             "query": q,
@@ -35,4 +41,11 @@ def search(q: str, top_k: int = 5, store=Depends(get_store)):  # noqa : B008
         for result in results
     ]
 
-    return SearchResponse(query=q, results=search_results)
+    context = "\n\n".join(r.text for r in search_results)
+    response = llm.invoke([
+        SystemMessage(content="Answer the question using only the provided context. Be concise."),
+        HumanMessage(content=f"Context:\n{context}\n\nQuestion: {q}"),
+    ])
+    answer = response.content  # type: ignore[union-attr]
+
+    return SearchResponse(query=q, answer=answer, results=search_results)
