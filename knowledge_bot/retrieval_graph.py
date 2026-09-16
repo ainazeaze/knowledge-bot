@@ -12,6 +12,8 @@ from .store import get_store
 
 llm = ChatGroq(api_key=SecretStr(config.GROQ_API_KEY), model=config.GROQ_MODEL)
 
+_RELEVANCE_SCORE_THRESHOLD = 3.0
+
 class RetrievalState(TypedDict):
     query : str
     original_query: str
@@ -32,20 +34,35 @@ def search_node(state: RetrievalState) -> dict:
     return {"results": results, "attempts": state["attempts"] + 1}
 
 def grade_node(state: RetrievalState) -> dict:
-    response = llm.invoke([
-        SystemMessage(content="You are a relevance grader. Answer only YES or NO"),
-        HumanMessage(content=f"Query: {state['original_query']}\n\nResult: {state['results'][0]['text']}"),
-    ])
-    should_rewrite = "YES" not in response.content
+    if not state["results"]:
+        logger.info("grade | no results, skipping grading query=%r", state["original_query"])
+        return {"should_rewrite": False}
+    top_score = state["results"][0]["score"]
+    if top_score >= _RELEVANCE_SCORE_THRESHOLD:
+        logger.info("grade | score=%.2f above threshold, skipping LLM query=%r", top_score, state["original_query"])
+        return {"should_rewrite": False}
+    try:
+        response = llm.invoke([
+            SystemMessage(content="You are a relevance grader. Answer only YES or NO"),
+            HumanMessage(content=f"Query: {state['original_query']}\n\nResult: {state['results'][0]['text']}"),
+        ])
+        should_rewrite = "YES" not in response.content
+    except Exception as e:
+        logger.warning("grade | LLM call failed, skipping rewrite: %s", e)
+        should_rewrite = False
     logger.info("grade | relevant=%s query=%r", not should_rewrite, state["original_query"])
     return {"should_rewrite": should_rewrite}
 
 def rewrite_node(state: RetrievalState) -> dict:
-    response = llm.invoke([
-        SystemMessage(content="You are a query rewriter. Answer with ONLY a better query"),
-        HumanMessage(content=f"Rewrite this query to find more relevant results: {state['original_query']}"),
-    ])
-    new_query = response.content.strip()  # type: ignore[union-attr]
+    try:
+        response = llm.invoke([
+            SystemMessage(content="You are a query rewriter. Answer with ONLY a better query"),
+            HumanMessage(content=f"Rewrite this query to find more relevant results: {state['original_query']}"),
+        ])
+        new_query = response.content.strip()  # type: ignore[union-attr]
+    except Exception as e:
+        logger.warning("rewrite | LLM call failed, keeping original query: %s", e)
+        new_query = state["original_query"]
     logger.info("rewrite | original=%r rewritten=%r", state["original_query"], new_query)
     return {"query": new_query}
 

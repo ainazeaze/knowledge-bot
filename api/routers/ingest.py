@@ -74,7 +74,7 @@ async def ingest_pdf(
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(contents)
         tmp_path = tmp.name
-    pdf = parse_pdf(tmp_path)
+    pdf = parse_pdf(tmp_path, filename_hint=file.filename)
     os.unlink(tmp_path)
     if not pdf.is_valid:
         raise HTTPException(status_code=422, detail="Couldn't extract meaningful text from that PDF.")

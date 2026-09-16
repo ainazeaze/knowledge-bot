@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from pydantic import SecretStr
@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from api.dependencies import get_store
 from api.schemas.search import SearchResponse, SearchResult
 from knowledge_bot import config
+from knowledge_bot.logger import logger
 from knowledge_bot.retrieval_graph import app
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -14,7 +15,7 @@ llm = ChatGroq(api_key=SecretStr(config.GROQ_API_KEY), model=config.GROQ_MODEL)
 
 
 @router.get("", response_model=SearchResponse)
-def search(q: str, top_k: int = 5, store=Depends(get_store)):  # noqa: B008
+def search(q: str, top_k: int = Query(5, ge=1, le=50), store=Depends(get_store)):  # noqa: B008
     final_state = app.invoke(
         {
             "query": q,
@@ -42,10 +43,14 @@ def search(q: str, top_k: int = 5, store=Depends(get_store)):  # noqa: B008
     ]
 
     context = "\n\n".join(r.text for r in search_results)
-    response = llm.invoke([
-        SystemMessage(content="Answer the question using only the provided context. Be concise."),
-        HumanMessage(content=f"Context:\n{context}\n\nQuestion: {q}"),
-    ])
-    answer = response.content  # type: ignore[union-attr]
+    try:
+        response = llm.invoke([
+            SystemMessage(content="Answer the question using only the provided context. Be concise."),
+            HumanMessage(content=f"Context:\n{context}\n\nQuestion: {q}"),
+        ])
+        answer = response.content  # type: ignore[union-attr]
+    except Exception as e:
+        logger.warning("search | answer LLM call failed: %s", e)
+        answer = ""
 
     return SearchResponse(query=q, answer=answer, results=search_results)
