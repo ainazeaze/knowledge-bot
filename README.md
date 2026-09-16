@@ -12,7 +12,7 @@ A personal RAG knowledge base with two interfaces: MCP tools for Claude Code, an
 
 ### MCP (Claude Code)
 
-Register the MCP server once:
+Can be used directly as an agent tool inside Claude Code. Register the MCP server once:
 
 ```bash
 claude mcp add brainbot /path/to/knowledge-bot/.venv/bin/python /path/to/knowledge-bot/interfaces/mcp_server.py
@@ -27,6 +27,10 @@ Restart Claude Code — the tools are available in every session. Ask naturally:
 | `save_url_to_knowledge_base(url)` | Scrape and save a URL |
 | `save_pdf_to_knowledge_base(file_path)` | Parse and save a local PDF |
 | `list_documents(limit)` | List recently saved documents |
+
+### Web UI
+
+A React frontend is available at [ainazeaze/knowledge-bot-ui](https://github.com/ainazeaze/knowledge-bot-ui). Start the API (below) then follow the UI repo's setup instructions.
 
 ### REST API
 
