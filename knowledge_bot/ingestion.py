@@ -37,30 +37,25 @@ class KnowledgeStore:
         self._bm25_chunks: list[dict] = []
 
     def chunk_text(self, text: str) -> list[str]:
-        """Split text into overlapping chunks.
-
-        Uses a simple character-based splitter that tries to break on
-        paragraph boundaries. Good enough for v1 — swap in a token-aware
-        splitter (like langchain's) if you need more precision.
-        """
         chunks = []
         start = 0
         while start < len(text):
             end = start + config.CHUNK_SIZE
-
-            # Try to break on a paragraph boundary
             if end < len(text):
-                # Look for a paragraph break near the end
-                newline_pos = text.rfind("\n\n", start + config.CHUNK_SIZE // 2, end)
-                if newline_pos != -1:
-                    end = newline_pos
-
+                search_from = start + config.CHUNK_SIZE // 2
+                for sep in ("\n\n", "\n", " "):
+                    pos = text.rfind(sep, search_from, end)
+                    if pos != -1:
+                        end = pos
+                        break
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
-
-            start = end - config.CHUNK_OVERLAP
-
+            # Advance overlap start to next word boundary so chunks don't begin mid-word
+            next_start = end - config.CHUNK_OVERLAP
+            while next_start < len(text) and text[next_start] not in (" ", "\n", "\t"):
+                next_start += 1
+            start = next_start + 1 if next_start < len(text) else len(text)
         return chunks
 
     def ingest(self, doc: Document) -> tuple[int, bool]:
