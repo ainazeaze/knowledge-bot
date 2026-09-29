@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from groq import Groq
 
+from api.dependencies import get_store
 from api.routers import documents, ingest, jobs, search
 from knowledge_bot import config
 from knowledge_bot.logger import logger
@@ -28,9 +29,17 @@ def _validate_groq_model() -> None:
     logger.info("startup | GROQ_MODEL=%r OK", config.GROQ_MODEL)
 
 
+def _warm_store() -> None:
+    store = get_store()
+    # embedder loads at KnowledgeStore.__init__; force cross-encoder + BM25 now
+    store.search("warmup", top_k=1)
+    logger.info("startup | store warmed (embedder, cross-encoder, BM25 ready)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _validate_groq_model()
+    _warm_store()
     yield
 
 
